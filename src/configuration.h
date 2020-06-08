@@ -56,7 +56,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define optstr(s) (xstr(s)[0] ? xstr(s) : "unset")
 
 #ifdef NRF52840_XXAA // All of the NRF52 targets are configured using variant.h, so this section shouldn't need to be
-                     // board specific
+// board specific
 
 //
 // Standard definitions for NRF52 targets
@@ -221,6 +221,27 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RF95_IRQ_GPIO 26 // IRQ line for the LORA radio
 #define DIO1_GPIO 35     // DIO1 & DIO2 are not currently used, but they must be assigned to a pin number
 #define DIO2_GPIO 34     // DIO1 & DIO2 are not currently used, but they must be assigned to a pin number
+
+#elif defined(TTGO_TWATCH_BASE)
+
+#define HW_VENDOR "ttgo-twatch-base"
+
+#define RESET_GPIO      25      // If defined, this pin will be used to reset the LORA radio
+#define RF95_IRQ_GPIO   26      // IRQ line for the LORA radio
+#define DIO1_GPIO       38      // DIO1 & DIO2 are not currently used, but they must be assigned to a pin number
+#define DIO2_GPIO       39      // DIO1 & DIO2 are not currently used, but they must be assigned to a pin number
+
+#undef  SCK_GPIO
+#undef  MISO_GPIO
+#undef  MOSI_GPIO
+#undef  NSS_GPIO
+
+#define SCK_GPIO        14
+#define MISO_GPIO       2
+#define MOSI_GPIO       15
+#define NSS_GPIO        13
+
+#define BUTTON_PIN      36
 #endif
 
 #ifdef ARDUINO_NRF52840_PCA10056

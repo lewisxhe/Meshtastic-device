@@ -24,6 +24,7 @@ esp_sleep_source_t wakeCause; // the reason we booted this time
 #include "axp20x.h"
 extern AXP20X_Class axp;
 #endif
+extern void setBlackLight(bool on);
 
 /// Called to ask any observers if they want to veto sleep. Return 1 to veto or 0 to allow sleep to happen
 Observable<void *> preflightSleep;
@@ -151,8 +152,11 @@ void doDeepSleep(uint64_t msecToWake)
     notifySleep.notifyObservers(NULL); // also tell the regular sleep handlers
     notifyDeepSleep.notifyObservers(NULL);
 
+#if defined(TTGO_TWATCH_BASE)
+    setBlackLight(false);
+#else
     screen.setOn(false); // datasheet says this will draw only 10ua
-
+#endif
     nodeDB.saveToDisk();
 
 #ifdef RESET_OLED
@@ -194,15 +198,16 @@ void doDeepSleep(uint64_t msecToWake)
     Note: we don't isolate pins that are used for the LORA, LED, i2c, spi or the wake button
     */
     static const uint8_t rtcGpios[] = {/* 0, */ 2,
-    /* 4, */
+                                                /* 4, */
 #ifndef USE_JTAG
-                                       12,           13,
-    /* 14, */ /* 15, */
+                                                12,           13,
+                                                /* 14, */ /* 15, */
 #endif
-                                       /* 25, */ 26, /* 27, */
-                                       32,           33, 34, 35,
-                                       36,           37
-                                       /* 38, 39 */};
+                                                /* 25, */ 26, /* 27, */
+                                                32,           33, 34, 35,
+                                                36,           37
+                                                /* 38, 39 */
+                                      };
 
     for (int i = 0; i < sizeof(rtcGpios); i++)
         rtc_gpio_isolate((gpio_num_t)rtcGpios[i]);
@@ -284,18 +289,18 @@ esp_sleep_wakeup_cause_t doLightSleep(uint64_t sleepMsec) // FIXME, use a more r
 
 /**
  * enable modem sleep mode as needed and available.  Should lower our CPU current draw to an average of about 20mA.
- * 
+ *
  * per https://docs.espressif.com/projects/esp-idf/en/latest/api-reference/system/power_management.html
- * 
+ *
  * supposedly according to https://github.com/espressif/arduino-esp32/issues/475 this is already done in arduino
  */
 void enableModemSleep()
 {
-  static esp_pm_config_esp32_t config; // filled with zeros because bss
+    static esp_pm_config_esp32_t config; // filled with zeros because bss
 
-  config.max_freq_mhz = CONFIG_ESP32_DEFAULT_CPU_FREQ_MHZ;
-  config.min_freq_mhz = 10; // 10Mhz is minimum recommended
-  config.light_sleep_enable = false;
-  DEBUG_MSG("Sleep request result %x\n", esp_pm_configure(&config));
+    config.max_freq_mhz = CONFIG_ESP32_DEFAULT_CPU_FREQ_MHZ;
+    config.min_freq_mhz = 10; // 10Mhz is minimum recommended
+    config.light_sleep_enable = false;
+    DEBUG_MSG("Sleep request result %x\n", esp_pm_configure(&config));
 }
 #endif

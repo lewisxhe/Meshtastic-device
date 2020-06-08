@@ -18,12 +18,20 @@ void reinitBluetooth()
 
     // Note: these callbacks might be coming in from a different thread.
     BLEServer *serve = initBLE(
-        [](uint32_t pin) {
-            powerFSM.trigger(EVENT_BLUETOOTH_PAIR);
-            screen.startBluetoothPinScreen(pin);
-        },
-        []() { screen.stopBluetoothPinScreen(); }, getDeviceName(), HW_VENDOR, optstr(APP_VERSION),
-        optstr(HW_VERSION)); // FIXME, use a real name based on the macaddr
+    [](uint32_t pin) {
+        powerFSM.trigger(EVENT_BLUETOOTH_PAIR);
+#if defined(TTGO_TWATCH_BASE)
+#else
+        screen.startBluetoothPinScreen(pin);
+#endif
+    },
+    []() {
+#if defined(TTGO_TWATCH_BASE)
+#else
+        screen.stopBluetoothPinScreen();
+#endif
+    }, getDeviceName(), HW_VENDOR, optstr(APP_VERSION),
+    optstr(HW_VERSION)); // FIXME, use a real name based on the macaddr
     createMeshBluetoothService(serve);
 
     // Start advertising - this must be done _after_ creating all services
@@ -122,13 +130,13 @@ void axp192Init()
             axp.setChargeControlCur(AXP1XX_CHARGE_CUR_1320MA); // actual limit (in HW) on the tbeam is 450mA
 #if 0
 
-      // Not connected
-      //val = 0xfc;
-      //axp._writeByte(AXP202_VHTF_CHGSET, 1, &val); // Set temperature protection
+            // Not connected
+            //val = 0xfc;
+            //axp._writeByte(AXP202_VHTF_CHGSET, 1, &val); // Set temperature protection
 
-      //not used
-      //val = 0x46;
-      //axp._writeByte(AXP202_OFF_CTL, 1, &val); // enable bat detection
+            //not used
+            //val = 0x46;
+            //axp._writeByte(AXP202_OFF_CTL, 1, &val); // enable bat detection
 #endif
             axp.debugCharging();
 
@@ -139,7 +147,7 @@ void axp192Init()
 
             axp.adc1Enable(AXP202_BATT_CUR_ADC1, 1);
             axp.enableIRQ(AXP202_BATT_REMOVED_IRQ | AXP202_BATT_CONNECT_IRQ | AXP202_CHARGING_FINISHED_IRQ | AXP202_CHARGING_IRQ |
-                              AXP202_VBUS_REMOVED_IRQ | AXP202_VBUS_CONNECT_IRQ | AXP202_PEK_SHORTPRESS_IRQ,
+                          AXP202_VBUS_REMOVED_IRQ | AXP202_VBUS_CONNECT_IRQ | AXP202_PEK_SHORTPRESS_IRQ,
                           1);
 
             axp.clearIRQ();
@@ -170,16 +178,16 @@ void esp32Setup()
 
 uint32_t axpDebugRead()
 {
-  axp.debugCharging();
-  DEBUG_MSG("vbus current %f\n", axp.getVbusCurrent());
-  DEBUG_MSG("charge current %f\n", axp.getBattChargeCurrent());
-  DEBUG_MSG("bat voltage %f\n", axp.getBattVoltage());
-  DEBUG_MSG("batt pct %d\n", axp.getBattPercentage());
-  DEBUG_MSG("is battery connected %d\n", axp.isBatteryConnect());
-  DEBUG_MSG("is USB connected %d\n", axp.isVBUSPlug());
-  DEBUG_MSG("is charging %d\n", axp.isChargeing());
+    axp.debugCharging();
+    DEBUG_MSG("vbus current %f\n", axp.getVbusCurrent());
+    DEBUG_MSG("charge current %f\n", axp.getBattChargeCurrent());
+    DEBUG_MSG("bat voltage %f\n", axp.getBattVoltage());
+    DEBUG_MSG("batt pct %d\n", axp.getBattPercentage());
+    DEBUG_MSG("is battery connected %d\n", axp.isBatteryConnect());
+    DEBUG_MSG("is USB connected %d\n", axp.isVBUSPlug());
+    DEBUG_MSG("is charging %d\n", axp.isChargeing());
 
-  return 30 * 1000;
+    return 30 * 1000;
 }
 
 Periodic axpDebugOutput(axpDebugRead);
@@ -237,7 +245,7 @@ void esp32Loop()
     }
 
     if (powerStatus.haveBattery && !powerStatus.usb &&
-        axp.getBattVoltage() < MIN_BAT_MILLIVOLTS) // If we have a battery at all and it is less than 10% full, force deep sleep
+            axp.getBattVoltage() < MIN_BAT_MILLIVOLTS) // If we have a battery at all and it is less than 10% full, force deep sleep
         powerFSM.trigger(EVENT_LOW_BATTERY);
 
 #endif // T_BEAM_V10

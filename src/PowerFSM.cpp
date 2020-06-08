@@ -5,21 +5,37 @@
 #include "NodeDB.h"
 #include "configuration.h"
 #include "main.h"
-#include "screen.h"
 #include "sleep.h"
 #include "target_specific.h"
+
+#if defined(TTGO_TWATCH_BASE)
+#include <TTGO.h>
+#else
+#include "screen.h"
+#endif
+
+
+void setBlackLight(bool on)
+{
+#if defined(TTGO_TWATCH_BASE)
+    TTGOClass *twatch = TTGOClass::getWatch();
+    on ? twatch->openBL() : twatch->closeBL();
+#else
+    screen.setOn(on);
+#endif
+}
 
 static void sdsEnter()
 {
     /*
 
-  // Don't deepsleep if we have USB power or if the user as pressed a button recently
-  // !isUSBPowered <- doesn't work yet because the axp192 isn't letting the battery fully charge when we are awake - FIXME
-  if (millis() - lastPressMs > radioConfig.preferences.mesh_sds_timeout_secs)
-  {
+    // Don't deepsleep if we have USB power or if the user as pressed a button recently
+    // !isUSBPowered <- doesn't work yet because the axp192 isn't letting the battery fully charge when we are awake - FIXME
+    if (millis() - lastPressMs > radioConfig.preferences.mesh_sds_timeout_secs)
+    {
     doDeepSleep(radioConfig.preferences.sds_secs);
-  }
-*/
+    }
+    */
 
     doDeepSleep(radioConfig.preferences.sds_secs * 1000LL);
 }
@@ -29,7 +45,7 @@ static void sdsEnter()
 static void lsEnter()
 {
     DEBUG_MSG("lsEnter begin, ls_secs=%u\n", radioConfig.preferences.ls_secs);
-    screen.setOn(false);
+    setBlackLight(false);
 
     DEBUG_MSG("lsEnter end\n");
 }
@@ -73,8 +89,7 @@ static void lsIdle()
 #else
         bool pressed = false;
 #endif
-        if (pressed) // If we woke because of press, instead generate a PRESS event.
-        {
+        if (pressed) { // If we woke because of press, instead generate a PRESS event.
             powerFSM.trigger(EVENT_PRESS);
         } else {
             // Otherwise let the NB state handle the IRQ (and that state will handle stuff like IRQs etc)
@@ -92,7 +107,7 @@ static void lsExit()
 
 static void nbEnter()
 {
-    screen.setOn(false);
+    setBlackLight(false);
     setBluetoothEnable(false);
 
     // FIXME - check if we already have packets for phone and immediately trigger EVENT_PACKETS_FOR_PHONE
@@ -101,12 +116,12 @@ static void nbEnter()
 static void darkEnter()
 {
     setBluetoothEnable(true);
-    screen.setOn(false);
+    setBlackLight(false);
 }
 
 static void onEnter()
 {
-    screen.setOn(true);
+    setBlackLight(true);
     setBluetoothEnable(true);
 
     static uint32_t lastPingMs;
@@ -124,7 +139,10 @@ static void wakeForPing() {}
 
 static void screenPress()
 {
+#if defined(TTGO_TWATCH_BASE)
+#else
     screen.onPress();
+#endif
 }
 
 static void bootEnter() {}

@@ -43,14 +43,44 @@
 #include "BluetoothUtil.h"
 #endif
 
+#include "RF95Interface.h"
+#include "SX1262Interface.h"
+
+#ifdef NO_ESP32
+#include "variant.h"
+#endif
+
+#ifdef TTGO_TWATCH_BASE
+#include <TTGO.h>
+#endif
+
+SPIClass *ptrSPI = nullptr;
+#if defined(TTGO_TWATCH_BASE)
+
+TTGOClass *twatch = nullptr;
+SPIClass LoraSPI(HSPI);
+TFT_eSPI *tft = nullptr;
+
+#define L80_RESET       //Use twatch lora module , it no has gps module
+
+
+#else
+void scanI2Cdevice(void);
+static uint32_t ledBlinker();
+
 // We always create a screen object, but we only init it if we find the hardware
 meshtastic::Screen screen(SSD1306_ADDRESS);
-
-// Global power status singleton
-meshtastic::PowerStatus powerStatus;
+Periodic ledPeriodic(ledBlinker);
 
 bool ssd1306_found;
 bool axp192_found;
+
+
+
+#endif  /*TTGO_TWATCH_BASE*/
+
+// Global power status singleton
+meshtastic::PowerStatus powerStatus;
 
 DSRRouter realRouter;
 Router &router = realRouter; // Users of router don't care what sort of subclass implements that API
@@ -58,70 +88,11 @@ Router &router = realRouter; // Users of router don't care what sort of subclass
 // -----------------------------------------------------------------------------
 // Application
 // -----------------------------------------------------------------------------
+const char *getDeviceName();
 
-void scanI2Cdevice(void)
-{
-    byte err, addr;
-    int nDevices = 0;
-    for (addr = 1; addr < 127; addr++) {
-        Wire.beginTransmission(addr);
-        err = Wire.endTransmission();
-        if (err == 0) {
-            DEBUG_MSG("I2C device found at address 0x%x\n", addr);
 
-            nDevices++;
 
-            if (addr == SSD1306_ADDRESS) {
-                ssd1306_found = true;
-                DEBUG_MSG("ssd1306 display found\n");
-            }
-#ifdef AXP192_SLAVE_ADDRESS
-            if (addr == AXP192_SLAVE_ADDRESS) {
-                axp192_found = true;
-                DEBUG_MSG("axp192 PMU found\n");
-            }
-#endif
-        } else if (err == 4) {
-            DEBUG_MSG("Unknow error at address 0x%x\n", addr);
-        }
-    }
-    if (nDevices == 0)
-        DEBUG_MSG("No I2C devices found\n");
-    else
-        DEBUG_MSG("done\n");
-}
 
-const char *getDeviceName()
-{
-    uint8_t dmac[6];
-
-    getMacAddr(dmac);
-
-    // Meshtastic_ab3c
-    static char name[20];
-    sprintf(name, "Meshtastic_%02x%02x", dmac[4], dmac[5]);
-    return name;
-}
-
-static uint32_t ledBlinker()
-{
-    static bool ledOn;
-    ledOn ^= 1;
-
-    setLed(ledOn);
-
-    // have a very sparse duty cycle of LED being on, unless charging, then blink 0.5Hz square wave rate to indicate that
-    return powerStatus.charging ? 1000 : (ledOn ? 2 : 1000);
-}
-
-Periodic ledPeriodic(ledBlinker);
-
-#include "RF95Interface.h"
-#include "SX1262Interface.h"
-
-#ifdef NO_ESP32
-#include "variant.h"
-#endif
 
 void setup()
 {
@@ -136,6 +107,22 @@ void setup()
 
     initDeepSleep();
 
+#if defined(TTGO_TWATCH_BASE)
+    twatch = TTGOClass::getWatch();
+    twatch->begin();
+    tft = twatch->eTFT;
+    twatch->openBL();
+    ptrSPI = &LoraSPI;
+
+    tft->fillScreen(TFT_BLACK);
+    tft->setTextFont(0);
+    tft->setCursor(0, 0);
+    tft->setTextColor(TFT_GREEN);
+    tft->print("Started ...");
+    twatch->enableLDO3();
+
+#else
+    ptrSPI = &SPI;
 #ifdef VEXT_ENABLE
     pinMode(VEXT_ENABLE, OUTPUT);
     digitalWrite(VEXT_ENABLE, 0); // turn on the display power
@@ -186,6 +173,9 @@ void setup()
 
     screen.print("Started...\n");
 
+#endif  /*TTGO_TWATCH_BASE*/
+
+
     readFromRTC(); // read the main CPU RTC at first (in case we can't get GPS time)
 
 // If we know we have a L80 GPS, don't try UBLOX
@@ -216,6 +206,8 @@ void setup()
     // Init our SPI controller
 #ifdef NRF52_SERIES
     SPI.begin();
+#elif defined(TTGO_TWATCH_BASE)
+
 #else
     // ESP32
     SPI.begin(SCK_GPIO, MISO_GPIO, MOSI_GPIO, NSS_GPIO);
@@ -226,17 +218,18 @@ void setup()
     RadioInterface *rIf =
 #if defined(RF95_IRQ_GPIO)
         // new CustomRF95(); old Radiohead based driver
-        new RF95Interface(NSS_GPIO, RF95_IRQ_GPIO, RESET_GPIO, SPI);
+        new RF95Interface(NSS_GPIO, RF95_IRQ_GPIO, RESET_GPIO, *ptrSPI);
 #elif defined(SX1262_CS)
-        new SX1262Interface(SX1262_CS, SX1262_DIO1, SX1262_RESET, SX1262_BUSY, SPI);
+        new SX1262Interface(SX1262_CS, SX1262_DIO1, SX1262_RESET, SX1262_BUSY, *ptrSPI);
 #else
         new SimRadio();
 #endif
 
-    if (!rIf->init())
+    if (!rIf->init()) {
         recordCriticalError(ErrNoRadio);
-    else
+    } else {
         router.addInterface(rIf);
+    }
 
     // This must be _after_ service.init because we need our preferences loaded from flash to have proper timeout values
     PowerFSM_setup(); // we will transition to ON in a couple of seconds, FIXME, only do this for cold boots, not waking from SDS
@@ -250,16 +243,16 @@ void setup()
 
 uint32_t axpDebugRead()
 {
-  axp.debugCharging();
-  DEBUG_MSG("vbus current %f\n", axp.getVbusCurrent());
-  DEBUG_MSG("charge current %f\n", axp.getBattChargeCurrent());
-  DEBUG_MSG("bat voltage %f\n", axp.getBattVoltage());
-  DEBUG_MSG("batt pct %d\n", axp.getBattPercentage());
-  DEBUG_MSG("is battery connected %d\n", axp.isBatteryConnect());
-  DEBUG_MSG("is USB connected %d\n", axp.isVBUSPlug());
-  DEBUG_MSG("is charging %d\n", axp.isChargeing());
+    axp.debugCharging();
+    DEBUG_MSG("vbus current %f\n", axp.getVbusCurrent());
+    DEBUG_MSG("charge current %f\n", axp.getBattChargeCurrent());
+    DEBUG_MSG("bat voltage %f\n", axp.getBattVoltage());
+    DEBUG_MSG("batt pct %d\n", axp.getBattPercentage());
+    DEBUG_MSG("is battery connected %d\n", axp.isBatteryConnect());
+    DEBUG_MSG("is USB connected %d\n", axp.isVBUSPlug());
+    DEBUG_MSG("is charging %d\n", axp.isChargeing());
 
-  return 30 * 1000;
+    return 30 * 1000;
 }
 
 Periodic axpDebugOutput(axpDebugRead);
@@ -307,6 +300,9 @@ void loop()
     }
 #endif
 
+#if defined(TTGO_TWATCH_BASE)
+
+#else
     // Show boot screen for first 3 seconds, then switch to normal operation.
     static bool showingBootScreen = true;
     if (showingBootScreen && (millis() > 3000)) {
@@ -320,7 +316,7 @@ void loop()
     screen.debug()->setPowerStatus(powerStatus);
     // TODO(#4): use something based on hdop to show GPS "signal" strength.
     screen.debug()->setGPSStatus(gps->hasLock() ? "good" : "bad");
-
+#endif
     // No GPS lock yet, let the OS put the main CPU in low power mode for 100ms (or until another interrupt comes in)
     // i.e. don't just keep spinning in loop as fast as we can.
     // DEBUG_MSG("msecs %d\n", msecstosleep);
@@ -331,3 +327,66 @@ void loop()
 
     delay(msecstosleep);
 }
+
+
+
+
+const char *getDeviceName()
+{
+    uint8_t dmac[6];
+
+    getMacAddr(dmac);
+
+    // Meshtastic_ab3c
+    static char name[20];
+    sprintf(name, "Meshtastic_%02x%02x", dmac[4], dmac[5]);
+    return name;
+}
+
+
+#if !defined(TTGO_TWATCH_BASE)
+void scanI2Cdevice(void)
+{
+    byte err, addr;
+    int nDevices = 0;
+    for (addr = 1; addr < 127; addr++) {
+        Wire.beginTransmission(addr);
+        err = Wire.endTransmission();
+        if (err == 0) {
+            DEBUG_MSG("I2C device found at address 0x%x\n", addr);
+
+            nDevices++;
+
+            if (addr == SSD1306_ADDRESS) {
+                ssd1306_found = true;
+                DEBUG_MSG("ssd1306 display found\n");
+            }
+#ifdef AXP192_SLAVE_ADDRESS
+            if (addr == AXP192_SLAVE_ADDRESS) {
+                axp192_found = true;
+                DEBUG_MSG("axp192 PMU found\n");
+            }
+#endif
+        } else if (err == 4) {
+            DEBUG_MSG("Unknow error at address 0x%x\n", addr);
+        }
+    }
+    if (nDevices == 0)
+        DEBUG_MSG("No I2C devices found\n");
+    else
+        DEBUG_MSG("done\n");
+}
+
+
+static uint32_t ledBlinker()
+{
+    static bool ledOn;
+    ledOn ^= 1;
+
+    setLed(ledOn);
+
+    // have a very sparse duty cycle of LED being on, unless charging, then blink 0.5Hz square wave rate to indicate that
+    return powerStatus.charging ? 1000 : (ledOn ? 2 : 1000);
+}
+
+#endif

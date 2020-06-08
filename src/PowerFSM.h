@@ -18,3 +18,4 @@
 extern Fsm powerFSM;
 
 void PowerFSM_setup();
+void setBlackLight(bool on);

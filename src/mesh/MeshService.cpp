@@ -116,7 +116,10 @@ const MeshPacket *MeshService::handleFromRadioUser(const MeshPacket *mp)
         sendOurOwner(mp->from);
 
         String lcd = String("Joined: ") + mp->decoded.user.long_name + "\n";
+#if defined(TTGO_TWATCH_BASE)
+#else
         screen.print(lcd.c_str());
+#endif
     }
 
     return mp;
@@ -216,7 +219,7 @@ void MeshService::handleToRadio(MeshPacket &p)
         p.id = generatePacketId(); // If the phone didn't supply one, then pick one
 
     p.rx_time = getValidTime(); // Record the time the packet arrived from the phone
-                                // (so we update our nodedb for the local node)
+    // (so we update our nodedb for the local node)
 
     // Send the packet into the mesh
 
